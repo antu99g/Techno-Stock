@@ -7,10 +7,16 @@
     <script src="https://unpkg.com/html5-qrcode" type="text/javascript"></script>
     <style>
         * { box-sizing: border-box; }
-        body { margin: 0; font-family: system-ui, sans-serif; background: #f0f2f5; height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
-        
-        /* Fixed Header & Tabs */
-        .header { background: white; padding: 10px 15px 0; box-shadow: 0 2px 4px rgba(0,0,0,0.1); z-index: 10; }
+        body { 
+            margin: 0; 
+            font-family: system-ui, sans-serif; 
+            background: #f0f2f5; 
+            position: fixed; 
+            top: 0; left: 0; right: 0; bottom: 0; 
+            display: flex; 
+            flex-direction: column; 
+        }        
+        .header { background: white; padding: 10px 15px 0; box-shadow: 0 2px 4px rgba(0,0,0,0.1); z-index: 10; flex-shrink: 0; }
         #status-bar { text-align: center; padding: 5px; font-weight: bold; color: white; border-radius: 5px; margin-bottom: 10px; font-size: 12px; }
         .online { background: #28a745; } .offline { background: #dc3545; }
         
@@ -23,8 +29,8 @@
         .tab-btn { padding: 8px 16px; border: none; border-radius: 20px; background: #e9ecef; font-weight: bold; white-space: nowrap; cursor: pointer; color: #495057; }
         .tab-btn.active { background: #007bff; color: white; }
         
-        /* Scrollable Product List - UPDATED DESIGN */
-        .scroll-content { flex: 1; overflow-y: auto; padding: 15px; -webkit-overflow-scrolling: touch; }
+        /* Scrollable Product List - UPDATED: min-height: 0 ensures it doesn't push the footer out */
+        .scroll-content { flex: 1; overflow-y: auto; padding: 15px; -webkit-overflow-scrolling: touch; min-height: 0; }
         .model-card { background: white; padding: 15px; border-radius: 8px; margin-bottom: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
         .model-card h3 { margin: 0 0 10px 0; color: #212529; font-size: 20px; font-weight: 800; border-bottom: 2px solid #f0f2f5; padding-bottom: 8px; }
         
@@ -34,8 +40,8 @@
         .variant-left b { color: #212529; }
         .variant-right { background: black; color: white; padding: 6px 14px; border-radius: 6px; font-weight: bold; font-size: 16px; min-width: 45px; text-align: center; }
 
-        /* Fixed Footer Buttons */
-        .footer { background: white; padding: 15px; display: flex; gap: 10px; box-shadow: 0 -2px 10px rgba(0,0,0,0.1); z-index: 10; }
+        /* Fixed Footer Buttons - UPDATED: flex-shrink ensures it keeps its size */
+        .footer { background: white; padding: 15px; display: flex; gap: 10px; box-shadow: 0 -2px 10px rgba(0,0,0,0.1); z-index: 10; flex-shrink: 0; }
         .btn { flex: 1; padding: 15px; border: none; border-radius: 8px; color: white; font-weight: bold; font-size: 16px; cursor: pointer; }
         .btn-primary { background: #007bff; }
         .btn-success { background: #28a745; } 
