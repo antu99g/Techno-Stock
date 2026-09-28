@@ -1,0 +1,360 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Techno Stock App</title>
+    <script src="https://unpkg.com/html5-qrcode" type="text/javascript"></script>
+    <style>
+        * { box-sizing: border-box; }
+        body { margin: 0; font-family: system-ui, sans-serif; background: #f0f2f5; height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
+        
+        /* Fixed Header & Tabs */
+        .header { background: white; padding: 10px 15px 0; box-shadow: 0 2px 4px rgba(0,0,0,0.1); z-index: 10; }
+        #status-bar { text-align: center; padding: 5px; font-weight: bold; color: white; border-radius: 5px; margin-bottom: 10px; font-size: 12px; }
+        .online { background: #28a745; } .offline { background: #dc3545; }
+        
+        /* Search Bar */
+        .search-row { display: flex; gap: 10px; margin-bottom: 10px; align-items: center; }
+        input[type="text"] { flex: 1; padding: 12px; border: 1px solid #ccc; border-radius: 8px; font-size: 16px; margin: 0; }
+        
+        .tabs { display: flex; overflow-x: auto; gap: 10px; padding-bottom: 10px; -webkit-overflow-scrolling: touch; }
+        .tabs::-webkit-scrollbar { display: none; }
+        .tab-btn { padding: 8px 16px; border: none; border-radius: 20px; background: #e9ecef; font-weight: bold; white-space: nowrap; cursor: pointer; color: #495057; }
+        .tab-btn.active { background: #007bff; color: white; }
+        
+        /* Scrollable Product List - UPDATED DESIGN */
+        .scroll-content { flex: 1; overflow-y: auto; padding: 15px; -webkit-overflow-scrolling: touch; }
+        .model-card { background: white; padding: 15px; border-radius: 8px; margin-bottom: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+        .model-card h3 { margin: 0 0 10px 0; color: #212529; font-size: 20px; font-weight: 800; border-bottom: 2px solid #f0f2f5; padding-bottom: 8px; }
+        
+        .variant-row { display: flex; justify-content: space-between; align-items: center; padding: 10px 0; border-bottom: 1px solid #f0f2f5; }
+        .variant-row:last-child { border-bottom: none; padding-bottom: 0; }
+        .variant-left { font-size: 16px; color: #495057; }
+        .variant-left b { color: #212529; }
+        .variant-right { background: black; color: white; padding: 6px 14px; border-radius: 6px; font-weight: bold; font-size: 16px; min-width: 45px; text-align: center; }
+
+        /* Fixed Footer Buttons */
+        .footer { background: white; padding: 15px; display: flex; gap: 10px; box-shadow: 0 -2px 10px rgba(0,0,0,0.1); z-index: 10; }
+        .btn { flex: 1; padding: 15px; border: none; border-radius: 8px; color: white; font-weight: bold; font-size: 16px; cursor: pointer; }
+        .btn-primary { background: #007bff; }
+        .btn-success { background: #28a745; } 
+        .btn-danger { background: #dc3545; }
+
+        /* Transaction Overlay */
+        .overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: white; z-index: 100; overflow-y: auto; padding: 20px; display: none; flex-direction: column; }
+        .overlay.active { display: flex; }
+        .overlay label { font-weight: bold; margin-top: 10px; display: block; }
+        .overlay input[type="number"], .overlay input[type="text"] { width: 100%; padding: 12px; border: 1px solid #ccc; border-radius: 8px; font-size: 16px; margin-top: 5px; }
+        .qty-controls { display: flex; margin-top: 5px; }
+        .qty-controls button { width: 60px; font-size: 24px; border: 1px solid #ccc; background: #e9ecef; }
+        .qty-controls input { margin: 0; border-radius: 0; text-align: center; border-left: none; border-right: none; }
+        .overlay-btns { display: flex; gap: 10px; margin-top: 20px; }
+        .btn-secondary { background: #6c757d; }
+        #reader { width: 100%; margin-top: 10px; display: none; }
+    </style>
+</head>
+<body>
+
+    <!-- FIXED TOP -->
+    <div class="header">
+        <div id="status-bar" class="online">Loading Inventory...</div>
+        
+        <!-- Search Row with Button -->
+        <div class="search-row">
+            <input type="text" id="search-input" placeholder="Search Model (e.g. OR10)">
+            <button class="btn btn-primary" onclick="filterInventory()" style="padding: 12px 20px; margin: 0; flex: none;">Search</button>
+        </div>
+
+        <div class="tabs">
+            <button class="tab-btn active" data-tab="T" onclick="setTab('T')">T-shirt</button>
+            <button class="tab-btn" data-tab="L" onclick="setTab('L')">Lower</button>
+            <button class="tab-btn" data-tab="P" onclick="setTab('P')">Polo (কলার)</button>
+            <button class="tab-btn" data-tab="F" onclick="setTab('F')">Full Sleeve (ফুলহাতা)</button>
+        </div>
+    </div>
+
+    <!-- SCROLLABLE MIDDLE -->
+    <div class="scroll-content" id="product-list">
+        <!-- Products injected here via JS -->
+    </div>
+
+    <!-- FIXED BOTTOM -->
+    <div class="footer">
+        <button class="btn btn-success" onclick="openForm('stock_in')">Add Item</button>
+        <button class="btn btn-danger" onclick="openForm('stock_out')">Sell Item</button>
+    </div>
+
+    <!-- TRANSACTION FULLSCREEN OVERLAY -->
+    <div class="overlay" id="tx-overlay">
+        <h2 id="form-title" style="margin-top:0;">Transaction</h2>
+        
+        <button class="btn btn-secondary" id="start-scan-btn" onclick="startScanner()" style="padding:10px;">📷 Scan Barcode to Autofill</button>
+        <button class="btn btn-secondary" id="stop-scan-btn" onclick="stopScanner()" style="padding:10px; display:none;">Stop Scanner</button>
+        <div id="reader"></div>
+
+        <input type="hidden" id="tx-barcode">
+        
+        <label>Model Number</label>
+        <input type="text" id="tx-model" placeholder="Model Number">
+        
+        <label>Size</label>
+        <input type="text" id="tx-size" placeholder="Size (e.g., L)">
+        
+        <label>Quantity</label>
+        <div class="qty-controls">
+            <button onclick="changeQty(-1)">-</button>
+            <input type="number" id="tx-qty" value="1" min="1">
+            <button onclick="changeQty(1)">+</button>
+        </div>
+
+        <div class="overlay-btns">
+            <button class="btn btn-secondary" onclick="closeForm()">Cancel</button>
+            <button class="btn" id="submit-tx-btn" onclick="submitTransaction()">Submit</button>
+        </div>
+    </div>
+
+    <script>
+        // REPLACE THIS URL WITH YOUR ACTUAL DEPLOYMENT URL
+        const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbz-vZLHN5xg0KKYxoBoG7Izl7YugOZXiDCClT-9VIMvPRcE1ocCI0GUaonwCESonra0-g/exec"; 
+        
+        let allInventory = JSON.parse(localStorage.getItem('technoInventory') || '[]');
+        let currentTab = 'T'; // Default to T-shirt
+        let currentAction = "";
+        let html5QrcodeScanner = null;
+
+        // --- Network & Fetch ---
+        async function fetchInventory() {
+            if (!navigator.onLine) return;
+            const statusBar = document.getElementById('status-bar');
+            
+            try {
+                const res = await fetch(APPS_SCRIPT_URL, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                    body: JSON.stringify({ request_type: "get_inventory" })
+                });
+                
+                const text = await res.text();
+                
+                try {
+                    const result = JSON.parse(text);
+                    if (result.status === "success") {
+                        allInventory = result.data;
+                        localStorage.setItem('technoInventory', JSON.stringify(allInventory));
+                        renderProducts();
+                        statusBar.textContent = "Online - Synced";
+                        statusBar.className = "online";
+                        syncOfflineQueue();
+                    } else {
+                        statusBar.textContent = "Error: " + result.message;
+                        statusBar.className = "offline";
+                    }
+                } catch (jsonError) {
+                    statusBar.textContent = "Error: Deployment Access must be 'Anyone'";
+                    statusBar.className = "offline";
+                }
+            } catch (e) { 
+                statusBar.textContent = "Network Error";
+                statusBar.className = "offline";
+            }
+        }
+
+        window.addEventListener('online', fetchInventory);
+        window.addEventListener('offline', () => {
+            document.getElementById('status-bar').textContent = "Offline - Viewing Cached Data";
+            document.getElementById('status-bar').className = "offline";
+        });
+
+        // --- Render UI ---
+        function setTab(tabCode) {
+            currentTab = tabCode;
+            
+            document.querySelectorAll('.tab-btn').forEach(btn => {
+                btn.classList.remove('active');
+                if (btn.getAttribute('data-tab') === tabCode) btn.classList.add('active');
+            });
+            
+            document.getElementById('search-input').value = ""; // clear search on tab change
+            renderProducts();
+        }
+
+        function filterInventory() {
+            const query = document.getElementById('search-input').value.trim().toLowerCase();
+            renderProducts(query);
+        }
+
+        function renderProducts(searchQuery = "") {
+            const listDiv = document.getElementById('product-list');
+            
+            let filtered = allInventory.filter(item => {
+                let itemCategory = String(item.category || "").trim().toUpperCase();
+                let itemModel = String(item.model_number || "").toLowerCase();
+                
+                let catMatch = (itemCategory === currentTab);
+                if (searchQuery) catMatch = true;
+                
+                return catMatch && itemModel.includes(searchQuery);
+            });
+
+            // Group variants under their model number
+            let grouped = {};
+            filtered.forEach(item => {
+                let modelStr = String(item.model_number);
+                if (!grouped[modelStr]) grouped[modelStr] = [];
+                grouped[modelStr].push({ size: item.size, stock: item.stock_quantity, price: item.price });
+            });
+
+            if (Object.keys(grouped).length === 0) {
+                listDiv.innerHTML = "<p style='text-align:center; color:#666;'>No products found.</p>";
+                return;
+            }
+
+            let html = "";
+            for (let model in grouped) {
+                // Generate rows for each size variant
+                let rows = grouped[model].map(s => {
+                    return `
+                        <div class="variant-row">
+                            <div class="variant-left">Size: <b>${s.size}</b> &nbsp;|&nbsp; ₹${s.price || 0}</div>
+                            <div class="variant-right">${s.stock || 0}</div>
+                        </div>
+                    `;
+                }).join('');
+
+                // Wrap rows in the model card
+                html += `
+                    <div class="model-card">
+                        <h3>${model.toUpperCase()}</h3>
+                        <div>${rows}</div>
+                    </div>
+                `;
+            }
+            listDiv.innerHTML = html;
+        }
+
+        // --- Forms & Transactions ---
+        function openForm(action) {
+            currentAction = action;
+            document.getElementById('tx-overlay').classList.add('active');
+            document.getElementById('form-title').textContent = action === 'stock_out' ? "Sell Item" : "Add Stock";
+            const btn = document.getElementById('submit-tx-btn');
+            btn.className = action === 'stock_out' ? "btn btn-danger" : "btn btn-success";
+            btn.textContent = action === 'stock_out' ? "Confirm Sale" : "Confirm Add";
+            
+            document.getElementById('tx-barcode').value = "";
+            document.getElementById('tx-model').value = "";
+            document.getElementById('tx-size').value = "";
+            document.getElementById('tx-qty').value = "1";
+        }
+
+        function closeForm() {
+            document.getElementById('tx-overlay').classList.remove('active');
+            stopScanner();
+        }
+
+        function changeQty(delta) {
+            let input = document.getElementById('tx-qty');
+            let val = parseInt(input.value) + delta;
+            input.value = val < 1 ? 1 : val;
+        }
+
+        async function submitTransaction() {
+            const payload = {
+                request_type: "transaction", action: currentAction,
+                barcode_number: document.getElementById('tx-barcode').value,
+                model_number: document.getElementById('tx-model').value,
+                size: document.getElementById('tx-size').value,
+                quantity_changed: document.getElementById('tx-qty').value
+            };
+            if (!payload.barcode_number && (!payload.model_number || !payload.size)) {
+                alert("Scan a barcode or enter Model + Size."); return;
+            }
+
+            if (navigator.onLine) {
+                try {
+                    const res = await fetch(APPS_SCRIPT_URL, {
+                        method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify(payload)
+                    });
+                    const result = await res.json();
+                    if (result.status === "success") {
+                        closeForm();
+                        fetchInventory(); // Refresh list immediately
+                    } else alert(`Error: ${result.message}`);
+                } catch (e) { saveOffline(payload); }
+            } else { saveOffline(payload); }
+        }
+
+        // --- Scanner Logic ---
+        function startScanner() {
+            document.getElementById('reader').style.display = "block";
+            document.getElementById('start-scan-btn').style.display = "none";
+            document.getElementById('stop-scan-btn').style.display = "block";
+
+            html5QrcodeScanner = new Html5QrcodeScanner("reader", { fps: 30, qrbox: { width: 250, height: 100 }, formatsToSupport: [ Html5QrcodeSupportedFormats.EAN_13 ] }, false);
+            html5QrcodeScanner.render(async (decodedText) => {
+                stopScanner();
+                document.getElementById('tx-barcode').value = decodedText;
+                
+                let found = allInventory.find(i => String(i.barcode_number) === decodedText);
+                if (found) {
+                    document.getElementById('tx-model').value = found.model_number;
+                    document.getElementById('tx-size').value = found.size;
+                } else if (navigator.onLine) {
+                    try {
+                        const res = await fetch(APPS_SCRIPT_URL, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({request_type: "autofill_barcode", barcode_number: decodedText}) });
+                        const result = await res.json();
+                        if (result.status === "success") {
+                            document.getElementById('tx-model').value = result.data.model_number;
+                            document.getElementById('tx-size').value = result.data.size;
+                        } else alert("Barcode not in system.");
+                    } catch(e) {}
+                }
+            });
+        }
+
+        function stopScanner() {
+            if (html5QrcodeScanner) {
+                html5QrcodeScanner.clear();
+                document.getElementById('reader').style.display = "none";
+                document.getElementById('start-scan-btn').style.display = "block";
+                document.getElementById('stop-scan-btn').style.display = "none";
+            }
+        }
+
+        // --- Offline Queue ---
+        function saveOffline(payload) {
+            let q = JSON.parse(localStorage.getItem('technoQueue') || '[]');
+            q.push(payload);
+            localStorage.setItem('technoQueue', JSON.stringify(q));
+            closeForm();
+            
+            if (payload.model_number && payload.size) {
+                let item = allInventory.find(i => String(i.model_number).toLowerCase() === String(payload.model_number).toLowerCase() && String(i.size).toLowerCase() === String(payload.size).toLowerCase());
+                if (item) {
+                    item.stock_quantity = parseInt(item.stock_quantity) + (payload.action === 'stock_in' ? parseInt(payload.quantity_changed) : -parseInt(payload.quantity_changed));
+                    renderProducts();
+                }
+            }
+        }
+        
+        async function syncOfflineQueue() {
+            let q = JSON.parse(localStorage.getItem('technoQueue') || '[]');
+            if (q.length === 0) return;
+            let failed = [];
+            for (let item of q) {
+                try {
+                    await fetch(APPS_SCRIPT_URL, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify(item) });
+                } catch(e) { failed.push(item); }
+            }
+            localStorage.setItem('technoQueue', JSON.stringify(failed));
+            if (failed.length === 0) fetchInventory(); 
+        }
+
+        // Initialize App
+        if (!navigator.onLine) document.getElementById('status-bar').className = "offline";
+        renderProducts(); 
+        fetchInventory(); 
+    </script>
+</body>
+</html>
