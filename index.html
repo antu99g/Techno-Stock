@@ -297,36 +297,66 @@
             document.getElementById('start-scan-btn').style.display = "none";
             document.getElementById('stop-scan-btn').style.display = "block";
 
-            html5QrcodeScanner = new Html5QrcodeScanner("reader", { fps: 30, qrbox: { width: 250, height: 100 }, formatsToSupport: [ Html5QrcodeSupportedFormats.EAN_13 ] }, false);
-            html5QrcodeScanner.render(async (decodedText) => {
-                stopScanner();
-                document.getElementById('tx-barcode').value = decodedText;
-                
-                let found = allInventory.find(i => String(i.barcode_number) === decodedText);
-                if (found) {
-                    document.getElementById('tx-model').value = found.model_number;
-                    document.getElementById('tx-size').value = found.size;
-                } else if (navigator.onLine) {
-                    try {
-                        const res = await fetch(APPS_SCRIPT_URL, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({request_type: "autofill_barcode", barcode_number: decodedText}) });
-                        const result = await res.json();
-                        if (result.status === "success") {
-                            document.getElementById('tx-model').value = result.data.model_number;
-                            document.getElementById('tx-size').value = result.data.size;
-                        } else alert("Barcode not in system.");
-                    } catch(e) {}
+            // Initialize the core scanner instead of the UI scanner
+            html5QrCode = new Html5Qrcode("reader");
+
+            // Instantly request the rear camera ("environment")
+            html5QrCode.start(
+                { facingMode: "environment" },
+                { 
+                    fps: 30, 
+                    qrbox: { width: 250, height: 100 }, 
+                    formatsToSupport: [ Html5QrcodeSupportedFormats.EAN_13 ] 
+                },
+                async (decodedText) => {
+                    // Success callback
+                    stopScanner();
+                    document.getElementById('tx-barcode').value = decodedText;
+                    
+                    let found = allInventory.find(i => String(i.barcode_number) === decodedText);
+                    if (found) {
+                        document.getElementById('tx-model').value = found.model_number;
+                        document.getElementById('tx-size').value = found.size;
+                    } else if (navigator.onLine) {
+                        try {
+                            const res = await fetch(APPS_SCRIPT_URL, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({request_type: "autofill_barcode", barcode_number: decodedText}) });
+                            const result = await res.json();
+                            if (result.status === "success") {
+                                document.getElementById('tx-model').value = result.data.model_number;
+                                document.getElementById('tx-size').value = result.data.size;
+                            } else alert("Barcode not in system.");
+                        } catch(e) {}
+                    }
+                },
+                (errorMessage) => {
+                    // Ignore frame errors while waiting for a scan
                 }
+            ).catch((err) => {
+                alert("Camera permission denied or rear camera not found.");
+                stopScanner();
             });
         }
 
         function stopScanner() {
-            if (html5QrcodeScanner) {
-                html5QrcodeScanner.clear();
-                document.getElementById('reader').style.display = "none";
-                document.getElementById('start-scan-btn').style.display = "block";
-                document.getElementById('stop-scan-btn').style.display = "none";
+            if (html5QrCode) {
+                html5QrCode.stop().then(() => {
+                    html5QrCode.clear();
+                    html5QrCode = null;
+                    resetScannerUI();
+                }).catch(err => {
+                    resetScannerUI();
+                });
+            } else {
+                resetScannerUI();
             }
         }
+
+        function resetScannerUI() {
+            document.getElementById('reader').style.display = "none";
+            document.getElementById('start-scan-btn').style.display = "block";
+            document.getElementById('stop-scan-btn').style.display = "none";
+        }
+        
 
         // --- Offline Queue ---
         function saveOffline(payload) {
