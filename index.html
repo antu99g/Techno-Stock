@@ -5,8 +5,11 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Techno Stock App</title>
     <script src="https://unpkg.com/html5-qrcode" type="text/javascript"></script>
-    <style>
+    
+<style>
         * { box-sizing: border-box; }
+        
+        /* UPDATED: Locked to physical screen dimensions to prevent mobile clipping */
         body { 
             margin: 0; 
             font-family: system-ui, sans-serif; 
@@ -15,14 +18,16 @@
             top: 0; left: 0; right: 0; bottom: 0; 
             display: flex; 
             flex-direction: column; 
-        }        
+        }
+        
+        /* Fixed Header & Tabs */
         .header { background: white; padding: 10px 15px 0; box-shadow: 0 2px 4px rgba(0,0,0,0.1); z-index: 10; flex-shrink: 0; }
         #status-bar { text-align: center; padding: 5px; font-weight: bold; color: white; border-radius: 5px; margin-bottom: 10px; font-size: 12px; }
         .online { background: #28a745; } .offline { background: #dc3545; }
         
         /* Search Bar */
         .search-row { display: flex; gap: 10px; margin-bottom: 10px; align-items: center; }
-        input[type="text"] { flex: 1; padding: 12px; border: 1px solid #ccc; border-radius: 8px; font-size: 16px; margin: 0; }
+        input[type="text"] { flex: 1; padding: 5px; border: 1px solid #ccc; border-radius: 8px; font-size: 16px; margin: 0; }
         
         .tabs { display: flex; overflow-x: auto; gap: 10px; padding-bottom: 10px; -webkit-overflow-scrolling: touch; }
         .tabs::-webkit-scrollbar { display: none; }
@@ -59,6 +64,7 @@
         .btn-secondary { background: #6c757d; }
         #reader { width: 100%; margin-top: 10px; display: none; }
     </style>
+
 </head>
 <body>
 
@@ -66,11 +72,14 @@
     <div class="header">
         <div id="status-bar" class="online">Loading Inventory...</div>
         
-        <!-- Search Row with Button -->
+        <!-- Search Row with Button & Scanner -->
         <div class="search-row">
-            <input type="text" id="search-input" placeholder="Search Model (e.g. OR10)">
+            <input type="text" id="search-input" placeholder="Search Model (e.g. OR10)" oninput="filterInventory()">
+            <button class="btn btn-secondary" onclick="startSearchScanner()" style="padding: 12px; margin: 0; flex: none;">📷</button>
             <button class="btn btn-primary" onclick="filterInventory()" style="padding: 12px 20px; margin: 0; flex: none;">Search</button>
         </div>
+        <button class="btn btn-secondary" id="stop-search-scan-btn" onclick="stopSearchScanner()" style="display:none; margin-bottom: 10px; width: 100%;">Stop Scanner</button>
+        <div id="search-reader" style="width: 100%; display: none; margin-bottom: 10px;"></div>
 
         <div class="tabs">
             <button class="tab-btn active" data-tab="T" onclick="setTab('T')">T-shirt</button>
@@ -121,7 +130,6 @@
     </div>
 
     <script>
-        // REPLACE THIS URL WITH YOUR ACTUAL DEPLOYMENT URL
         const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbz-vZLHN5xg0KKYxoBoG7Izl7YugOZXiDCClT-9VIMvPRcE1ocCI0GUaonwCESonra0-g/exec"; 
         
         let allInventory = JSON.parse(localStorage.getItem('technoInventory') || '[]');
@@ -237,6 +245,78 @@
                 `;
             }
             listDiv.innerHTML = html;
+        }
+
+        // --- Search Scanner Logic ---
+        let searchScanner = null;
+
+        function startSearchScanner() {
+            document.getElementById('search-reader').style.display = "block";
+            document.getElementById('stop-search-scan-btn').style.display = "block";
+
+            searchScanner = new Html5Qrcode("search-reader");
+
+            searchScanner.start(
+                { facingMode: "environment" },
+                { 
+                    fps: 30, 
+                    qrbox: { width: 250, height: 100 }, 
+                    formatsToSupport: [ Html5QrcodeSupportedFormats.EAN_13 ] 
+                },
+                async (decodedText) => {
+                    stopSearchScanner();
+                    
+                    // Search local cache first
+                    let found = allInventory.find(i => String(i.barcode_number) === decodedText);
+                    if (found) {
+                        document.getElementById('search-input').value = found.model_number;
+                        filterInventory(); // Automatically trigger the search
+                    } else if (navigator.onLine) {
+                        // Fallback to server search
+                        try {
+                            const res = await fetch(APPS_SCRIPT_URL, { 
+                                method: 'POST', 
+                                headers: { 'Content-Type': 'text/plain;charset=utf-8' }, 
+                                body: JSON.stringify({request_type: "autofill_barcode", barcode_number: decodedText}) 
+                            });
+                            const result = await res.json();
+                            if (result.status === "success") {
+                                document.getElementById('search-input').value = result.data.model_number;
+                                filterInventory(); // Automatically trigger the search
+                            } else {
+                                alert("Barcode not found in inventory.");
+                            }
+                        } catch(e) {}
+                    } else {
+                        alert("Barcode not found locally. Connect to internet to search database.");
+                    }
+                },
+                (errorMessage) => {
+                    // Ignore frame errors
+                }
+            ).catch((err) => {
+                alert("Camera permission denied or rear camera not found.");
+                stopSearchScanner();
+            });
+        }
+
+        function stopSearchScanner() {
+            if (searchScanner) {
+                searchScanner.stop().then(() => {
+                    searchScanner.clear();
+                    searchScanner = null;
+                    resetSearchScannerUI();
+                }).catch(err => {
+                    resetSearchScannerUI();
+                });
+            } else {
+                resetSearchScannerUI();
+            }
+        }
+
+        function resetSearchScannerUI() {
+            document.getElementById('search-reader').style.display = "none";
+            document.getElementById('stop-search-scan-btn').style.display = "none";
         }
 
         // --- Forms & Transactions ---
@@ -356,7 +436,7 @@
             document.getElementById('start-scan-btn').style.display = "block";
             document.getElementById('stop-scan-btn').style.display = "none";
         }
-        
+
 
         // --- Offline Queue ---
         function saveOffline(payload) {
