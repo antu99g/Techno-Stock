@@ -49,6 +49,9 @@
         .btn-success { background: #28a745; } 
         .btn-danger { background: #dc3545; }
         .btn-secondary { background: #6c757d; }
+        
+        /* Disabled Button State */
+        button:disabled { opacity: 0.6; cursor: not-allowed; }
 
         /* Transaction Overlay */
         .overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: white; z-index: 100; overflow-y: auto; padding: 20px; display: none; flex-direction: column; }
@@ -170,7 +173,7 @@
 
         <div class="overlay-btns" style="margin-top: 30px;">
             <button class="btn btn-secondary" onclick="closeBulkAddForm()">Cancel</button>
-            <button class="btn btn-success" onclick="submitBulkAdd()">Save Product</button>
+            <button class="btn btn-success" id="submit-bulk-btn" onclick="submitBulkAdd()">Save Product</button>
         </div>
     </div>
 
@@ -191,12 +194,19 @@
         let currentTab = 'T'; 
         let currentAction = "";
         
-        let html5QrCode = null;       // Transaction Scanner
-        let searchScanner = null;     // Search Scanner
-        let bulkScanner = null;       // Bulk Add Scanner
+        let html5QrCode = null;       
+        let searchScanner = null;     
+        let bulkScanner = null;       
         
         let currentBulkBarcodeId = "";
         const STANDARD_SIZES = ["S", "M", "L", "XL", "2XL", "3XL"];
+
+        // Expanded barcode format support array
+        const SUPPORTED_FORMATS = [
+            Html5QrcodeSupportedFormats.EAN_13,
+            Html5QrcodeSupportedFormats.CODE_128,
+            Html5QrcodeSupportedFormats.CODE_39
+        ];
 
         // --- PWA Service Worker ---
         if ('serviceWorker' in navigator) {
@@ -268,7 +278,6 @@
                 return catMatch && itemModel.includes(searchQuery);
             });
 
-            // Group by Model, aggregate quantities for identical sizes
             let grouped = {};
             filtered.forEach(item => {
                 let modelStr = String(item.model_number);
@@ -308,6 +317,7 @@
             currentAction = action;
             document.getElementById('tx-overlay').classList.add('active');
             document.getElementById('form-title').textContent = action === 'stock_out' ? "Sell Item" : "Add Stock";
+            
             const btn = document.getElementById('submit-tx-btn');
             btn.className = action === 'stock_out' ? "btn btn-danger" : "btn btn-success";
             btn.textContent = action === 'stock_out' ? "Confirm Sale" : "Confirm Add";
@@ -317,7 +327,6 @@
             document.getElementById('tx-size').value = "";
             document.getElementById('tx-qty').value = "1";
             
-            // Automatically start the scanner
             setTimeout(() => { startScanner(); }, 300);
         }
 
@@ -342,6 +351,11 @@
             };
             if (!payload.barcode_number && (!payload.model_number || !payload.size)) return alert("Scan a barcode or enter Model + Size.");
 
+            const btn = document.getElementById('submit-tx-btn');
+            const originalText = btn.textContent;
+            btn.textContent = "Processing...";
+            btn.disabled = true;
+
             if (navigator.onLine) {
                 try {
                     const res = await fetch(APPS_SCRIPT_URL, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify(payload) });
@@ -350,6 +364,9 @@
                     else alert(`Error: ${result.message}`);
                 } catch (e) { saveOffline(payload); }
             } else { saveOffline(payload); }
+            
+            btn.textContent = originalText;
+            btn.disabled = false;
         }
 
         // --- Search Scanner Logic ---
@@ -357,7 +374,7 @@
             document.getElementById('search-reader').style.display = "block";
             document.getElementById('stop-search-scan-btn').style.display = "block";
             searchScanner = new Html5Qrcode("search-reader");
-            searchScanner.start({ facingMode: "environment" }, { fps: 30, qrbox: { width: 250, height: 100 }, formatsToSupport: [ Html5QrcodeSupportedFormats.EAN_13 ] },
+            searchScanner.start({ facingMode: "environment" }, { fps: 30, qrbox: { width: 250, height: 100 }, formatsToSupport: SUPPORTED_FORMATS },
                 async (decodedText) => {
                     stopSearchScanner();
                     let found = allInventory.find(i => String(i.barcode_number) === decodedText);
@@ -391,7 +408,7 @@
             document.getElementById('start-scan-btn').style.display = "none";
             document.getElementById('stop-scan-btn').style.display = "block";
             html5QrCode = new Html5Qrcode("reader");
-            html5QrCode.start({ facingMode: "environment" }, { fps: 30, qrbox: { width: 250, height: 100 }, formatsToSupport: [ Html5QrcodeSupportedFormats.EAN_13 ] },
+            html5QrCode.start({ facingMode: "environment" }, { fps: 30, qrbox: { width: 250, height: 100 }, formatsToSupport: SUPPORTED_FORMATS },
                 async (decodedText) => {
                     stopScanner(); document.getElementById('tx-barcode').value = decodedText;
                     let found = allInventory.find(i => String(i.barcode_number) === decodedText);
@@ -451,7 +468,7 @@
             document.getElementById('bulk-scanner-modal').style.display = "flex";
             
             bulkScanner = new Html5Qrcode("bulk-reader");
-            bulkScanner.start({ facingMode: "environment" }, { fps: 30, qrbox: { width: 250, height: 100 }, formatsToSupport: [ Html5QrcodeSupportedFormats.EAN_13 ] },
+            bulkScanner.start({ facingMode: "environment" }, { fps: 30, qrbox: { width: 250, height: 100 }, formatsToSupport: SUPPORTED_FORMATS },
                 (decodedText) => { document.getElementById(currentBulkBarcodeId).value = decodedText; stopBulkScanner(); },
                 (err) => {}
             ).catch(err => { alert("Camera error."); stopBulkScanner(); });
@@ -502,12 +519,20 @@
             
             if (itemsToSave.length === 0) return alert("Please enter a quantity for at least one size.");
             
+            const btn = document.getElementById('submit-bulk-btn');
+            const originalText = btn.textContent;
+            btn.textContent = "Saving...";
+            btn.disabled = true;
+
             try {
                 const res = await fetch(APPS_SCRIPT_URL, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ request_type: "batch_add", items: itemsToSave }) });
                 const result = await res.json();
                 if (result.status === "success") { alert("Added successfully!"); closeBulkAddForm(); fetchInventory(); } 
                 else alert("Error: " + result.message);
             } catch(e) { alert("Server connection error."); }
+            
+            btn.textContent = originalText;
+            btn.disabled = false;
         }
 
         // --- Offline Queue ---
